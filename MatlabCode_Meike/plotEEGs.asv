@@ -1,0 +1,92 @@
+%% Plot EEG script
+clc
+clear all
+close all
+
+%% Path settings for script
+% Dependencies copied into shared dropbox folder 2019/12/23: add current path and set paths in relation to it
+mfile_full = matlab.desktop.editor.getActiveFilename;
+[dir_mfile, mfile] = fileparts(mfile_full);
+addpath(dir_mfile);
+
+cell_dir = split(dir_mfile, filesep);
+dir_clin = fullfile(cell_dir{1:end-1}, filesep, 'DataClinical');
+dir_spec = fullfile(cell_dir{1:end-1}, filesep, 'Spectrograms');
+dir_code = fullfile(cell_dir{1:end-1}, filesep, 'CodeEyal');
+dir_eeg = fullfile(cell_dir{1:end-1}, filesep, 'DataEEG');
+dir_features = fullfile(cell_dir{1:end-1}, filesep, 'DataFeatures');
+
+%% Load clinical data: CAMS times
+tbl_clin = EEG_AMS_LoadClinicalData(dir_clin); 
+tbl_clin_CAMStime=tbl_clin(:,[4,13]);           %subject ID + CAMS time
+
+% Find files
+cd(dir_eeg);
+files = dir('DELIRIUM_NON_ICU_AMSD*.mat');
+
+filenames={files.name};
+[a,~, ~, ~] = regexp(filenames, 'DELIRIUM_NON_ICU_AMSD([0-9]{3})', 'tokens');
+temp = [a{:}];
+subj = str2double(vertcat(temp{:}));
+subjectID=array2table(subj);
+
+field_out={'Timeofevaluation2'}
+for i_field = 1:numel(field_out);
+    temp_field = field_out{i_field};
+    subjectID.(temp_field) = nan(size(subjectID, 1), 1);
+    temp_out = double(tbl_clin_CAMStime.(temp_field)); % Convert to double in order to have NaN allowable as well
+    for i_subj = 1:size(subjectID, 1)
+        mask_clin_subj = tbl_clin_CAMStime.SUBJECTID == subjectID{i_subj, 'subj'};
+        if sum(mask_clin_subj)
+           subjectID{i_subj, temp_field} = temp_out(mask_clin_subj);
+        end
+    end
+end
+tbl_clin_CAMStime=subjectID; %CAMS times
+
+%% Load in EEGs
+freq_min=0.5;
+freq_max=30;
+flag_notch = true;
+
+for i_file = 1:numel(files)
+    filename = files(i_file).name;
+    % Load data
+    load(filename, 'Fs', 'channels', 'data');               % Fs, channels, data, start_time
+    ts = (0:size(data, 2)-1)/Fs;                            % Convert from samples to timestamps based on Fs (s)
+    channels = EEG_CAMS_ChannelsToCell(channels);           % Standardize channels format, some saved as char and some as nested cell
+   
+    % % Zero mean each signal, e.g. remove DC Offset
+    med_data= median(data,2);
+    zero_data = bsxfun(@minus, data, med_data);
+    clear data med_data;
+     
+    % Filter data for EEG freqs
+    filt_data = FilterEEG(zero_data', Fs, freq_min, freq_max, flag_notch)'; % Data expected in columns rather than rows
+    clear zero_data;
+    
+    % Calculate bipolar leads/refs/montage: standardize extraction
+    [bipolar_data, bipolar_names, bipolar_abbrev] = EEG_CAMS_Leads(filt_data, channels);
+    clear filt_data;
+    selectdata=bipolar_data([2,3,7,9],:); 
+    datanames=bipolar_abbrev([2,3,7,9],:);
+%   selectdata=bipolar_data([2,4,24,59],:);
+%   datanames=bipolar_abbrev([2,4,24,59],:);
+    clear bipolar_data;
+     
+    % Resample data when necessary
+    resampleddata = EEG_Resample(selectdata, datanames, Fs);
+    
+    %% Remove artefacts
+
+
+    %% Plot random 15 second window
+
+
+
+    %% Save plot 
+    
+end
+
+
+
